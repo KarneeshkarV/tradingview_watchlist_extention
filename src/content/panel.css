@@ -1,0 +1,264 @@
+/* Scope every rule under .tvwl-root so we don't leak into TradingView,
+   and so TradingView's globals don't bleed into us. */
+
+.tvwl-root,
+.tvwl-root * {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #d1d4dc;
+}
+
+.tvwl-root {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+
+.tvwl-panel {
+  pointer-events: auto;
+  width: 300px;
+  height: calc(100% - 16px);
+  margin-top: 8px;
+  margin-right: 8px;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  transition: width 0.18s ease;
+}
+
+.tvwl-panel--collapsed {
+  width: 36px;
+}
+
+.tvwl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2e39;
+  background: #1c2030;
+  flex-shrink: 0;
+}
+
+.tvwl-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #d1d4dc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tvwl-panel--collapsed .tvwl-title { display: none; }
+.tvwl-panel--collapsed .tvwl-header-actions .tvwl-icon-btn:not(:last-child) { display: none; }
+
+.tvwl-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.tvwl-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #b2b5be;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+.tvwl-icon-btn:hover { background: #1e222d; color: #d1d4dc; }
+.tvwl-icon-btn--accent { color: #2962ff; }
+.tvwl-icon-btn--accent:hover { background: rgba(41, 98, 255, 0.12); color: #5e8bff; }
+
+.tvwl-tabs {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #2a2e39;
+  background: #161a25;
+  flex-shrink: 0;
+}
+
+.tvwl-tabs-scroll {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2e39 transparent;
+}
+.tvwl-tabs-scroll::-webkit-scrollbar { height: 4px; }
+.tvwl-tabs-scroll::-webkit-scrollbar-thumb { background: #2a2e39; border-radius: 2px; }
+
+.tvwl-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 10px;
+  border-right: 1px solid #2a2e39;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 140px;
+  color: #b2b5be;
+  user-select: none;
+}
+.tvwl-tab:hover { background: #1e222d; color: #d1d4dc; }
+.tvwl-tab--active {
+  background: #131722;
+  color: #d1d4dc;
+  border-bottom: 2px solid #2962ff;
+  margin-bottom: -1px;
+}
+.tvwl-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+.tvwl-tab-close {
+  background: transparent;
+  border: none;
+  color: #6a6d78;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+.tvwl-tab-close:hover { background: #2a2e39; color: #ef5350; }
+
+.tvwl-tab-add {
+  background: transparent;
+  border: none;
+  color: #b2b5be;
+  cursor: pointer;
+  font-size: 18px;
+  width: 32px;
+  flex-shrink: 0;
+  border-left: 1px solid #2a2e39;
+}
+.tvwl-tab-add:hover { background: #1e222d; color: #2962ff; }
+
+.tvwl-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2e39 transparent;
+}
+.tvwl-list::-webkit-scrollbar { width: 6px; }
+.tvwl-list::-webkit-scrollbar-thumb { background: #2a2e39; border-radius: 3px; }
+
+.tvwl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid #1e222d;
+  cursor: pointer;
+  transition: background 0.08s ease;
+}
+.tvwl-row:hover { background: #1e222d; }
+.tvwl-row:hover .tvwl-row-del { opacity: 1; }
+
+.tvwl-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tvwl-row-ticker {
+  font-weight: 600;
+  color: #d1d4dc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tvwl-row-exch {
+  font-size: 11px;
+  color: #787b86;
+}
+
+.tvwl-row-del {
+  background: transparent;
+  border: none;
+  color: #6a6d78;
+  cursor: pointer;
+  font-size: 16px;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.tvwl-row-del:hover { background: #2a2e39; color: #ef5350; }
+
+.tvwl-empty {
+  padding: 16px 12px;
+  color: #787b86;
+  font-size: 12px;
+  text-align: center;
+}
+
+.tvwl-add {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid #2a2e39;
+  background: #161a25;
+  flex-shrink: 0;
+}
+.tvwl-add-input {
+  flex: 1;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  color: #d1d4dc;
+  border-radius: 4px;
+  padding: 6px 8px;
+  outline: none;
+  font-size: 13px;
+}
+.tvwl-add-input:focus { border-color: #2962ff; }
+.tvwl-add-input::placeholder { color: #5d6168; }
+
+.tvwl-add-btn {
+  background: #2962ff;
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.tvwl-add-btn:hover { background: #1e53e5; }
+
+.tvwl-toast {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translate(-50%, 10px);
+  background: #2a2e39;
+  color: #d1d4dc;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+.tvwl-toast--show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

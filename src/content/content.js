@@ -1,0 +1,183 @@
+(function () {
+  "use strict";
+
+  const LOG = "[TVWL]";
+  const { model } = window.TVWL;
+  const { storage } = window.TVWL;
+  const { bridge } = window.TVWL;
+  const { ui } = window.TVWL;
+
+  let state = null;
+  let mounted = null;
+
+  function persist() {
+    storage.saveState(state);
+  }
+
+  function rerender() {
+    if (!mounted) return;
+    ui.render(ctx(), mounted);
+  }
+
+  function ctx() {
+    return {
+      state,
+      actions: {
+        setActive(id) {
+          if (model.setActive(state, id)) {
+            persist();
+            rerender();
+          }
+        },
+        createList(name) {
+          model.createList(state, name);
+          persist();
+          rerender();
+        },
+        renameList(id, name) {
+          if (model.renameList(state, id, name)) {
+            persist();
+            rerender();
+          }
+        },
+        deleteList(id) {
+          if (model.deleteList(state, id)) {
+            persist();
+            rerender();
+          }
+        },
+        addSymbol(listId, raw) {
+          const ok = model.addSymbol(state, listId, raw);
+          if (ok) {
+            persist();
+            rerender();
+          } else {
+            ui.toast("Symbol already in list or invalid");
+          }
+        },
+        removeSymbol(listId, sym) {
+          if (model.removeSymbol(state, listId, sym)) {
+            persist();
+            rerender();
+          }
+        },
+        loadSymbol(sym) {
+          bridge.loadSymbol(sym).then((ok) => {
+            if (!ok) ui.toast("Couldn't switch chart. Try reloading TradingView.");
+          });
+        },
+        addCurrentSymbol() {
+          const list = state.lists.find((l) => l.id === state.activeId);
+          if (!list) return;
+          const sym = bridge.currentChartSymbol();
+          if (!sym) {
+            ui.toast("Couldn't detect current chart symbol");
+            return;
+          }
+          const ok = model.addSymbol(state, list.id, sym);
+          if (ok) {
+            persist();
+            rerender();
+            ui.toast(`Added ${sym}`);
+          } else {
+            ui.toast(`${sym} is already in this list`);
+          }
+        },
+        async importFromNative() {
+          const list = state.lists.find((l) => l.id === state.activeId);
+          if (!list) return;
+          const syms = bridge.readNativeWatchlist();
+          if (syms.length === 0) {
+            ui.toast("Open your TradingView watchlist first, then try again.");
+            return;
+          }
+          const added = model.importSymbols(state, list.id, syms);
+          persist();
+          rerender();
+          ui.toast(added ? `Imported ${added} symbol${added === 1 ? "" : "s"}` : "No new symbols");
+        },
+      },
+    };
+  }
+
+  function waitForTV(timeoutMs) {
+    return new Promise((resolve) => {
+      const ready = () =>
+        document.querySelector('#header-toolbar-symbol-search, [data-name="legend-source-title"]');
+      if (ready()) return resolve(true);
+      const start = Date.now();
+      const obs = new MutationObserver(() => {
+        if (ready()) {
+          obs.disconnect();
+          resolve(true);
+        } else if (Date.now() - start > timeoutMs) {
+          obs.disconnect();
+          resolve(false);
+        }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+    });
+  }
+
+  function watchForRemoval() {
+    const root = document.getElementById(ui.ROOT_ID);
+    if (!root) return;
+    const obs = new MutationObserver(() => {
+      if (!document.body.contains(root)) {
+        obs.disconnect();
+        mounted = ui.mount(ctx());
+        watchForRemoval();
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: false });
+  }
+
+  function hookSpaNavigation() {
+    const reMountIfNeeded = () => {
+      if (!document.getElementById(ui.ROOT_ID)) {
+        mounted = ui.mount(ctx());
+        watchForRemoval();
+      }
+    };
+    window.addEventListener("popstate", reMountIfNeeded);
+    const origPush = history.pushState;
+    history.pushState = function () {
+      const r = origPush.apply(this, arguments);
+      setTimeout(reMountIfNeeded, 50);
+      return r;
+    };
+    const origReplace = history.replaceState;
+    history.replaceState = function () {
+      const r = origReplace.apply(this, arguments);
+      setTimeout(reMountIfNeeded, 50);
+      return r;
+    };
+  }
+
+  async function init() {
+    try {
+      const loaded = await storage.loadState();
+      state = loaded && loaded.lists ? loaded : model.createState();
+    } catch (e) {
+      console.warn(LOG, "load failed; using fresh state", e);
+      state = model.createState();
+    }
+    await waitForTV(10000);
+    mounted = ui.mount(ctx());
+    watchForRemoval();
+    hookSpaNavigation();
+
+    storage.onStorageChanged((newValue) => {
+      if (newValue) {
+        state = newValue;
+        rerender();
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+})();

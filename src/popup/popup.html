@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="popup">
+      <header class="popup-header">
+        <div class="popup-title">Unlimited Watchlists</div>
+        <div class="popup-counts" id="counts">…</div>
+      </header>
+
+      <section class="popup-section">
+        <button class="popup-btn popup-btn--primary" id="open-tv">Open TradingView</button>
+      </section>
+
+      <section class="popup-section">
+        <div class="popup-section-title">Backup</div>
+        <button class="popup-btn" id="export">Export JSON</button>
+        <label class="popup-btn popup-btn--file">
+          Import JSON…
+          <input type="file" id="import-file" accept="application/json" hidden />
+        </label>
+        <div class="popup-radio-row">
+          <label><input type="radio" name="import-mode" value="merge" checked /> Merge</label>
+          <label><input type="radio" name="import-mode" value="replace" /> Replace</label>
+        </div>
+        <div class="popup-status" id="status"></div>
+      </section>
+
+      <footer class="popup-footer">
+        Lists are stored locally in this browser only.
+      </footer>
+    </div>
+    <script src="../lib/watchlist.js"></script>
+    <script src="../lib/storage.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
