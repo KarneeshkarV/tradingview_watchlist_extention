@@ -153,6 +153,285 @@
     return /^[A-Z0-9_.]+$/.test(last) ? last : null;
   }
 
+  // --- Live quotes via TradingView's data WebSocket -----------------------
+  //
+  // Talks to wss://data.tradingview.com/socket.io/websocket using TV's
+  // ~m~<len>~m~<payload> framing. The unauthorized token works for delayed
+  // quotes on most exchanges; that matches what the native watchlist shows
+  // for non-logged-in users.
+
+  const WS_URL = "wss://data.tradingview.com/socket.io/websocket";
+  const AUTH_TOKEN = "unauthorized_user_token";
+  const QUOTE_FIELDS = [
+    "lp",
+    "ch",
+    "chp",
+    "short_name",
+    "description",
+    "exchange",
+    "currency_code",
+  ];
+
+  function makeQuoteFeed() {
+    let ws = null;
+    let connecting = false;
+    let sessionId = null;
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    let visibilityHooked = false;
+    let started = false;
+    let recvBuffer = "";
+
+    const subscribed = new Set(); // symbols currently on the server
+    const desired = new Set(); // symbols we want subscribed
+    const cache = new Map(); // symbol -> { lp, ch, chp, ... }
+    const pendingChanges = new Set();
+    let rafHandle = null;
+    let listener = null;
+
+    function frame(payload) {
+      // length is JS string length, which matches what TV's reference clients
+      // use (their UI sends the same way).
+      return "~m~" + payload.length + "~m~" + payload;
+    }
+
+    function send(method, params) {
+      if (!ws || ws.readyState !== 1) return;
+      const payload = JSON.stringify({ m: method, p: params });
+      try {
+        ws.send(frame(payload));
+      } catch (e) {
+        console.warn(LOG, "ws send failed", e);
+      }
+    }
+
+    function newSessionId() {
+      const rand = Math.random().toString(16).slice(2, 14).padEnd(12, "0");
+      return "qs_" + rand;
+    }
+
+    function openSocket() {
+      if (ws || connecting) return;
+      if (document.visibilityState === "hidden") return;
+      connecting = true;
+      try {
+        ws = new WebSocket(WS_URL);
+      } catch (e) {
+        console.warn(LOG, "ws open failed", e);
+        ws = null;
+        connecting = false;
+        scheduleReconnect();
+        return;
+      }
+      ws.addEventListener("open", onOpen);
+      ws.addEventListener("message", onMessage);
+      ws.addEventListener("close", onClose);
+      ws.addEventListener("error", onError);
+    }
+
+    function closeSocket() {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      subscribed.clear();
+      if (!ws) return;
+      try {
+        ws.close();
+      } catch (e) {
+        /* noop */
+      }
+      ws = null;
+      connecting = false;
+    }
+
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      if (!started) return;
+      if (document.visibilityState === "hidden") return;
+      const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+      reconnectAttempts++;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        openSocket();
+      }, delay);
+    }
+
+    function onOpen() {
+      connecting = false;
+      reconnectAttempts = 0;
+      sessionId = newSessionId();
+      subscribed.clear();
+      send("set_auth_token", [AUTH_TOKEN]);
+      send("quote_create_session", [sessionId]);
+      send("quote_set_fields", [sessionId].concat(QUOTE_FIELDS));
+      reconcile();
+    }
+
+    function onClose() {
+      ws = null;
+      connecting = false;
+      subscribed.clear();
+      scheduleReconnect();
+    }
+
+    function onError() {
+      // close handler will run next and trigger reconnect.
+    }
+
+    function onMessage(ev) {
+      recvBuffer += typeof ev.data === "string" ? ev.data : "";
+      let payload;
+      while ((payload = takeFrame()) !== null) {
+        handlePayload(payload);
+      }
+    }
+
+    function takeFrame() {
+      // Frames look like: ~m~<digits>~m~<payload of that many chars>
+      if (recvBuffer.length < 4) return null;
+      if (!recvBuffer.startsWith("~m~")) {
+        // Resync — drop everything up to the next header.
+        const i = recvBuffer.indexOf("~m~");
+        if (i < 0) {
+          recvBuffer = "";
+          return null;
+        }
+        recvBuffer = recvBuffer.slice(i);
+        if (recvBuffer.length < 4) return null;
+      }
+      const second = recvBuffer.indexOf("~m~", 3);
+      if (second < 0) return null;
+      const len = parseInt(recvBuffer.slice(3, second), 10);
+      if (!Number.isFinite(len) || len < 0) {
+        recvBuffer = recvBuffer.slice(second + 3);
+        return null;
+      }
+      const start = second + 3;
+      if (recvBuffer.length < start + len) return null;
+      const payload = recvBuffer.slice(start, start + len);
+      recvBuffer = recvBuffer.slice(start + len);
+      return payload;
+    }
+
+    function handlePayload(payload) {
+      if (payload.startsWith("~h~")) {
+        // Heartbeat — echo it back verbatim (re-framed).
+        if (ws && ws.readyState === 1) {
+          try {
+            ws.send(frame(payload));
+          } catch (e) {
+            /* noop */
+          }
+        }
+        return;
+      }
+      let obj;
+      try {
+        obj = JSON.parse(payload);
+      } catch (e) {
+        return;
+      }
+      if (!obj || typeof obj !== "object") return;
+      if (obj.m === "qsd" && Array.isArray(obj.p) && obj.p.length >= 2) {
+        const item = obj.p[1];
+        if (item && item.n && item.v) {
+          const prev = cache.get(item.n) || {};
+          cache.set(item.n, Object.assign({}, prev, item.v));
+          pendingChanges.add(item.n);
+          scheduleFlush();
+        }
+      }
+    }
+
+    function scheduleFlush() {
+      if (rafHandle != null) return;
+      rafHandle = requestAnimationFrame(() => {
+        rafHandle = null;
+        if (pendingChanges.size === 0) return;
+        const changed = pendingChanges;
+        // Hand listener a snapshot, then start a new set so updates during
+        // the callback aren't lost.
+        // eslint-disable-next-line no-undef
+        const cb = listener;
+        // Replace the set reference atomically.
+        const snapshot = new Set(changed);
+        changed.clear();
+        if (cb) {
+          try {
+            cb(snapshot);
+          } catch (e) {
+            console.warn(LOG, "quote listener threw", e);
+          }
+        }
+      });
+    }
+
+    function reconcile() {
+      if (!ws || ws.readyState !== 1 || !sessionId) return;
+      const toAdd = [];
+      const toRemove = [];
+      for (const sym of desired) {
+        if (!subscribed.has(sym)) toAdd.push(sym);
+      }
+      for (const sym of subscribed) {
+        if (!desired.has(sym)) toRemove.push(sym);
+      }
+      if (toRemove.length > 0) {
+        send("quote_remove_symbols", [sessionId].concat(toRemove));
+        for (const s of toRemove) subscribed.delete(s);
+      }
+      if (toAdd.length > 0) {
+        send("quote_add_symbols", [sessionId].concat(toAdd));
+        for (const s of toAdd) subscribed.add(s);
+      }
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        closeSocket();
+      } else if (started) {
+        openSocket();
+      }
+    }
+
+    return {
+      start() {
+        if (started) {
+          openSocket();
+          return;
+        }
+        started = true;
+        if (!visibilityHooked) {
+          document.addEventListener("visibilitychange", onVisibilityChange);
+          visibilityHooked = true;
+        }
+        openSocket();
+      },
+      stop() {
+        started = false;
+        closeSocket();
+        if (visibilityHooked) {
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          visibilityHooked = false;
+        }
+      },
+      setSymbols(symbols) {
+        desired.clear();
+        for (const s of symbols || []) {
+          if (typeof s === "string" && s.length > 0) desired.add(s);
+        }
+        reconcile();
+      },
+      getQuote(symbol) {
+        return cache.get(symbol) || null;
+      },
+      setUpdateListener(cb) {
+        listener = typeof cb === "function" ? cb : null;
+      },
+    };
+  }
+
+  const quoteFeed = makeQuoteFeed();
+
   const root = (typeof window !== "undefined" ? window : globalThis);
   root.TVWL = root.TVWL || {};
   root.TVWL.bridge = {
@@ -160,5 +439,6 @@
     readNativeWatchlist,
     currentChartSymbol,
     findNativeWatchlistHost,
+    quoteFeed,
   };
 })();

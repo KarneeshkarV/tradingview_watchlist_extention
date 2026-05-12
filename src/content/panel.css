@@ -211,7 +211,7 @@
 .tvwl-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid #1e222d;
   cursor: pointer;
@@ -232,7 +232,32 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
 }
+
+.tvwl-row-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+.tvwl-row-price {
+  font-weight: 600;
+  color: #d1d4dc;
+  font-size: 12px;
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: background-color 0.35s ease;
+}
+.tvwl-row-change {
+  font-size: 11px;
+  color: #787b86;
+}
+.tvwl-row-change--up { color: #26a69a; }
+.tvwl-row-change--down { color: #ef5350; }
+.tvwl-row-price--flash-up { background-color: rgba(38, 166, 154, 0.22); }
+.tvwl-row-price--flash-down { background-color: rgba(239, 83, 80, 0.22); }
 .tvwl-row-ticker {
   font-weight: 600;
   color: #d1d4dc;

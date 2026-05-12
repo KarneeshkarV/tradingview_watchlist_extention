@@ -251,7 +251,12 @@
       const [exch, ticker] = sym.includes(":") ? sym.split(":") : ["", sym];
       const row = el(
         "div",
-        { class: "tvwl-row", title: sym, onClick: () => actions.loadSymbol(sym) },
+        {
+          class: "tvwl-row",
+          title: sym,
+          "data-symbol": sym,
+          onClick: () => actions.loadSymbol(sym),
+        },
         [
           el(
             "div",
@@ -259,6 +264,14 @@
             [
               el("div", { class: "tvwl-row-ticker", text: ticker }),
               exch ? el("div", { class: "tvwl-row-exch", text: exch }) : null,
+            ]
+          ),
+          el(
+            "div",
+            { class: "tvwl-row-quote" },
+            [
+              el("div", { class: "tvwl-row-price", text: "—" }),
+              el("div", { class: "tvwl-row-change", text: "" }),
             ]
           ),
           el("button", {
@@ -275,6 +288,69 @@
       wrap.appendChild(row);
     });
     return wrap;
+  }
+
+  function formatPrice(lp) {
+    if (typeof lp !== "number" || !isFinite(lp)) return "—";
+    const abs = Math.abs(lp);
+    const dp = abs >= 1 ? 2 : 4;
+    return lp.toLocaleString(undefined, {
+      minimumFractionDigits: dp,
+      maximumFractionDigits: dp,
+    });
+  }
+
+  function formatChangePct(chp) {
+    if (typeof chp !== "number" || !isFinite(chp)) return "";
+    const sign = chp > 0 ? "+" : "";
+    return sign + chp.toFixed(2) + "%";
+  }
+
+  function paintRow(row, quote) {
+    if (!row || !quote) return;
+    const priceEl = row.querySelector(".tvwl-row-price");
+    const changeEl = row.querySelector(".tvwl-row-change");
+    if (priceEl) {
+      const prev = priceEl.getAttribute("data-last");
+      const next = formatPrice(quote.lp);
+      priceEl.textContent = next;
+      if (prev != null && prev !== next && typeof quote.lp === "number") {
+        const prevNum = parseFloat(prev.replace(/[, ]/g, ""));
+        const dir = !isFinite(prevNum) || quote.lp > prevNum ? "up" : "down";
+        const cls = "tvwl-row-price--flash-" + dir;
+        priceEl.classList.add(cls);
+        setTimeout(() => priceEl.classList.remove(cls), 350);
+      }
+      priceEl.setAttribute("data-last", next);
+    }
+    if (changeEl) {
+      changeEl.textContent = formatChangePct(quote.chp);
+      changeEl.classList.remove("tvwl-row-change--up", "tvwl-row-change--down");
+      if (typeof quote.ch === "number" && quote.ch !== 0) {
+        changeEl.classList.add(quote.ch > 0 ? "tvwl-row-change--up" : "tvwl-row-change--down");
+      }
+    }
+  }
+
+  function applyQuotes(root, symbols, quoteFeed) {
+    if (!root || !quoteFeed) return;
+    const iter = symbols && typeof symbols.forEach === "function" ? symbols : null;
+    if (iter) {
+      iter.forEach((sym) => {
+        const row = root.querySelector(
+          '.tvwl-row[data-symbol="' + CSS.escape(sym) + '"]'
+        );
+        const q = quoteFeed.getQuote(sym);
+        if (row && q) paintRow(row, q);
+      });
+      return;
+    }
+    // No symbol set passed — paint everything currently in the DOM.
+    root.querySelectorAll(".tvwl-row[data-symbol]").forEach((row) => {
+      const sym = row.getAttribute("data-symbol");
+      const q = quoteFeed.getQuote(sym);
+      if (q) paintRow(row, q);
+    });
   }
 
   function buildAddBar(list, actions) {
@@ -308,5 +384,5 @@
 
   const root = (typeof window !== "undefined" ? window : globalThis);
   root.TVWL = root.TVWL || {};
-  root.TVWL.ui = { mount, teardown, render, toast, ROOT_ID };
+  root.TVWL.ui = { mount, teardown, render, toast, applyQuotes, ROOT_ID };
 })();
