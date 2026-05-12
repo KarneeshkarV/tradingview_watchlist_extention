@@ -16,6 +16,7 @@
 
   function mountPanel() {
     mounted = ui.mount(ctx(), nativeHost());
+    paintAllQuotes();
     return mounted;
   }
 
@@ -26,6 +27,18 @@
   function rerender() {
     if (!mounted) return;
     ui.render(ctx(), mounted);
+    paintAllQuotes();
+  }
+
+  function paintAllQuotes() {
+    if (!mounted || !bridge.quoteFeed) return;
+    ui.applyQuotes(mounted, null, bridge.quoteFeed);
+  }
+
+  function syncSubscriptions() {
+    if (!bridge.quoteFeed) return;
+    const list = state && state.lists.find((l) => l.id === state.activeId);
+    bridge.quoteFeed.setSymbols(list ? list.symbols : []);
   }
 
   function ctx() {
@@ -36,12 +49,14 @@
           if (model.setActive(state, id)) {
             persist();
             rerender();
+            syncSubscriptions();
           }
         },
         createList(name) {
           model.createList(state, name);
           persist();
           rerender();
+          syncSubscriptions();
         },
         renameList(id, name) {
           if (model.renameList(state, id, name)) {
@@ -53,6 +68,7 @@
           if (model.deleteList(state, id)) {
             persist();
             rerender();
+            syncSubscriptions();
           }
         },
         addSymbol(listId, raw) {
@@ -60,6 +76,7 @@
           if (ok) {
             persist();
             rerender();
+            syncSubscriptions();
           } else {
             ui.toast("Symbol already in list or invalid");
           }
@@ -68,6 +85,7 @@
           if (model.removeSymbol(state, listId, sym)) {
             persist();
             rerender();
+            syncSubscriptions();
           }
         },
         loadSymbol(sym) {
@@ -87,6 +105,7 @@
           if (ok) {
             persist();
             rerender();
+            syncSubscriptions();
             ui.toast(`Added ${sym}`);
           } else {
             ui.toast(`${sym} is already in this list`);
@@ -103,6 +122,7 @@
           const added = model.importSymbols(state, list.id, syms);
           persist();
           rerender();
+          syncSubscriptions();
           ui.toast(added ? `Imported ${added} symbol${added === 1 ? "" : "s"}` : "No new symbols");
         },
       },
@@ -189,10 +209,20 @@
     hookSpaNavigation();
     watchForNativeHost();
 
+    if (bridge.quoteFeed) {
+      bridge.quoteFeed.setUpdateListener((changed) => {
+        if (!mounted) return;
+        ui.applyQuotes(mounted, changed, bridge.quoteFeed);
+      });
+      bridge.quoteFeed.start();
+      syncSubscriptions();
+    }
+
     storage.onStorageChanged((newValue) => {
       if (newValue) {
         state = newValue;
         rerender();
+        syncSubscriptions();
       }
     });
   }
