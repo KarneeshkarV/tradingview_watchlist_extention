@@ -15,6 +15,14 @@
     const lists = state.lists || [];
     const symCount = lists.reduce((acc, l) => acc + (l.symbols ? l.symbols.length : 0), 0);
     $("#counts").textContent = `${lists.length} list${lists.length === 1 ? "" : "s"} · ${symCount} symbol${symCount === 1 ? "" : "s"}`;
+    const toggle = $("#pop-out-toggle");
+    if (toggle) toggle.checked = !!state.popOut;
+  }
+
+  async function setPopOut(popOut) {
+    const current = (await storage.loadState()) || model.createState();
+    current.popOut = !!popOut;
+    await storage.saveState(current);
   }
 
   function todayStamp() {
@@ -72,6 +80,9 @@
       doImport(f).finally(() => {
         e.target.value = "";
       });
+    });
+    $("#pop-out-toggle").addEventListener("change", (e) => {
+      setPopOut(e.target.checked);
     });
   });
 })();

@@ -246,7 +246,7 @@
   }
 
   function buildHeader(ctx, activeList, collapsed, embedded, root) {
-    const { actions } = ctx;
+    const { state, actions } = ctx;
     const header = el("div", { class: "tvwl-header" });
 
     const titleBtn = el(
@@ -294,6 +294,17 @@
         onClick: () => actions.importFromNative(),
       })
     );
+    if (typeof actions.togglePopOut === "function") {
+      const popped = !!(state && state.popOut);
+      actionsWrap.appendChild(
+        el("button", {
+          class: "tvwl-icon-btn",
+          title: popped ? "Dock into TradingView watchlist" : "Pop out into floating panel",
+          text: popped ? "⇲" : "⛶",
+          onClick: () => actions.togglePopOut(),
+        })
+      );
+    }
     if (!embedded) {
       actionsWrap.appendChild(
         el("button", {

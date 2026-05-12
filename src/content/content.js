@@ -11,6 +11,7 @@
   let mounted = null;
 
   function nativeHost() {
+    if (state && state.popOut) return null;
     return bridge.findNativeWatchlistHost ? bridge.findNativeWatchlistHost() : null;
   }
 
@@ -111,6 +112,12 @@
             ui.toast(`${sym} is already in this list`);
           }
         },
+        togglePopOut() {
+          state.popOut = !state.popOut;
+          persist();
+          mounted = mountPanel();
+          watchForRemoval();
+        },
         async importFromNative() {
           const list = state.lists.find((l) => l.id === state.activeId);
           if (!list) return;
@@ -164,6 +171,7 @@
 
   function watchForNativeHost() {
     const obs = new MutationObserver(() => {
+      if (state && state.popOut) return;
       const root = document.getElementById(ui.ROOT_ID);
       if (root && root.classList.contains("tvwl-root--overlay") && nativeHost()) {
         mounted = mountPanel();
@@ -203,6 +211,7 @@
       console.warn(LOG, "load failed; using fresh state", e);
       state = model.createState();
     }
+    if (typeof state.popOut !== "boolean") state.popOut = false;
     await waitForTV(10000);
     mounted = mountPanel();
     watchForRemoval();
@@ -220,8 +229,15 @@
 
     storage.onStorageChanged((newValue) => {
       if (newValue) {
+        const wasPopOut = !!(state && state.popOut);
         state = newValue;
-        rerender();
+        if (typeof state.popOut !== "boolean") state.popOut = false;
+        if (state.popOut !== wasPopOut) {
+          mounted = mountPanel();
+          watchForRemoval();
+        } else {
+          rerender();
+        }
         syncSubscriptions();
       }
     });

@@ -22,6 +22,7 @@
     return {
       version: STATE_VERSION,
       activeId: firstId,
+      popOut: false,
       lists: [{ id: firstId, name: "Default", symbols: [] }],
     };
   }
