@@ -10,6 +10,15 @@
   let state = null;
   let mounted = null;
 
+  function nativeHost() {
+    return bridge.findNativeWatchlistHost ? bridge.findNativeWatchlistHost() : null;
+  }
+
+  function mountPanel() {
+    mounted = ui.mount(ctx(), nativeHost());
+    return mounted;
+  }
+
   function persist() {
     storage.saveState(state);
   }
@@ -125,17 +134,29 @@
     const obs = new MutationObserver(() => {
       if (!document.body.contains(root)) {
         obs.disconnect();
-        mounted = ui.mount(ctx());
+        if (root.hasAttribute("data-tvwl-teardown")) return;
+        mounted = mountPanel();
         watchForRemoval();
       }
     });
-    obs.observe(document.body, { childList: true, subtree: false });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function watchForNativeHost() {
+    const obs = new MutationObserver(() => {
+      const root = document.getElementById(ui.ROOT_ID);
+      if (root && root.classList.contains("tvwl-root--overlay") && nativeHost()) {
+        mounted = mountPanel();
+        watchForRemoval();
+      }
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function hookSpaNavigation() {
     const reMountIfNeeded = () => {
       if (!document.getElementById(ui.ROOT_ID)) {
-        mounted = ui.mount(ctx());
+        mountPanel();
         watchForRemoval();
       }
     };
@@ -163,9 +184,10 @@
       state = model.createState();
     }
     await waitForTV(10000);
-    mounted = ui.mount(ctx());
+    mounted = mountPanel();
     watchForRemoval();
     hookSpaNavigation();
+    watchForNativeHost();
 
     storage.onStorageChanged((newValue) => {
       if (newValue) {

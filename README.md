@@ -6,7 +6,7 @@ Works in Chrome, Brave, Firefox 121+, and Zen.
 
 ## Features
 
-- **Side panel overlay** on `tradingview.com/chart` that mimics TradingView's dark theme.
+- **Native watchlist replacement** on `tradingview.com/chart` that embeds into TradingView's right sidebar and keeps the lower news/details sections available.
 - **Multiple named watchlists** with a tab bar — create / rename (double-click tab) / delete / switch freely.
 - **Click a symbol** to load it on the active chart — goes straight to the new chart, no search dialog.
 - **★ button** in the panel header adds the symbol currently shown on the chart to the active list.
@@ -36,7 +36,7 @@ Requires Firefox 121 or newer (Manifest V3).
 ## Usage
 
 1. Open `https://www.tradingview.com/chart/`.
-2. The watchlist panel appears docked on the right.
+2. Open TradingView's native right-sidebar watchlist. The extension replaces that watchlist area with your custom lists while leaving the lower news/details sections intact.
 3. Click **+** in the tab bar to create a new list.
 4. Type a ticker (`AAPL` or `NASDAQ:AAPL`) in the bottom input and press Enter to add.
 5. Click any symbol row to swap the chart to that symbol (reloads the page on the new chart).
@@ -58,6 +58,7 @@ icons/       - 16/48/128 PNG icons
 ## Caveats
 
 - Clicking a row navigates via `?symbol=...` which causes TradingView to reload onto the new chart. This is deterministic (no fragile DOM hacks) at the cost of a reload.
+- The extension detects TradingView's watchlist DOM best-effort. If TradingView changes that markup, it falls back to the old floating panel instead of failing completely.
 - Detecting the "current chart symbol" reads the URL, document title, and chart legend in that order. TradingView's DOM is not a public API, so this is best-effort.
 - Lists are stored in `chrome.storage.local` and are not synced across devices. Use **Export JSON** to transfer between browsers.
 - Manifest V3 only; older Firefox versions are not supported.

@@ -2,6 +2,9 @@
   "use strict";
 
   const ROOT_ID = "tvwl-root";
+  const HIDDEN_ATTR = "data-tvwl-native-hidden";
+  const HOST_MIN_HEIGHT_ATTR = "data-tvwl-host-min-height";
+  let nativeObserver = null;
 
   function el(tag, attrs, children) {
     const node = document.createElement(tag);
@@ -49,17 +52,78 @@
     return v == null ? null : v.trim();
   }
 
-  function mount(ctx) {
+  function mount(ctx, nativeHost) {
     teardown();
-    const root = el("div", { id: ROOT_ID, class: "tvwl-root" });
-    document.body.appendChild(root);
+    const embedded = !!nativeHost;
+    const root = el("div", {
+      id: ROOT_ID,
+      class: "tvwl-root" + (embedded ? " tvwl-root--embedded" : " tvwl-root--overlay"),
+    });
+    if (embedded) {
+      preserveHostHeight(nativeHost, root);
+      nativeHost.appendChild(root);
+      hideNativeChildren(nativeHost, root);
+      nativeObserver = new MutationObserver(() => hideNativeChildren(nativeHost, root));
+      nativeObserver.observe(nativeHost, { childList: true });
+    } else {
+      document.body.appendChild(root);
+    }
     render(ctx, root);
     return root;
   }
 
   function teardown() {
+    if (nativeObserver) {
+      nativeObserver.disconnect();
+      nativeObserver = null;
+    }
+    restoreNativeChildren();
+    restoreHostHeight();
     const old = document.getElementById(ROOT_ID);
-    if (old) old.remove();
+    if (old) {
+      old.setAttribute("data-tvwl-teardown", "true");
+      old.remove();
+    }
+  }
+
+  function preserveHostHeight(host, root) {
+    if (!host.hasAttribute(HOST_MIN_HEIGHT_ATTR)) {
+      host.setAttribute(HOST_MIN_HEIGHT_ATTR, host.style.minHeight || "");
+    }
+    const height = Math.round(host.getBoundingClientRect().height);
+    if (height > 0) {
+      const px = Math.max(220, height) + "px";
+      host.style.minHeight = px;
+      root.style.minHeight = px;
+    }
+  }
+
+  function restoreHostHeight() {
+    document.querySelectorAll("[" + HOST_MIN_HEIGHT_ATTR + "]").forEach((node) => {
+      const previous = node.getAttribute(HOST_MIN_HEIGHT_ATTR);
+      if (previous) node.style.minHeight = previous;
+      else node.style.removeProperty("min-height");
+      node.removeAttribute(HOST_MIN_HEIGHT_ATTR);
+    });
+  }
+
+  function hideNativeChildren(host, root) {
+    Array.from(host.children).forEach((child) => {
+      if (child === root) return;
+      if (!child.hasAttribute(HIDDEN_ATTR)) {
+        child.setAttribute(HIDDEN_ATTR, child.style.display || "");
+      }
+      child.style.display = "none";
+    });
+  }
+
+  function restoreNativeChildren() {
+    document.querySelectorAll("[" + HIDDEN_ATTR + "]").forEach((node) => {
+      const previous = node.getAttribute(HIDDEN_ATTR);
+      if (previous) node.style.display = previous;
+      else node.style.removeProperty("display");
+      node.removeAttribute(HIDDEN_ATTR);
+    });
   }
 
   function render(ctx, root) {
@@ -70,6 +134,7 @@
 
   function buildPanel(ctx, collapsed) {
     const { state, actions } = ctx;
+    const embedded = document.getElementById(ROOT_ID)?.classList.contains("tvwl-root--embedded");
     const panel = el("div", { class: "tvwl-panel" + (collapsed ? " tvwl-panel--collapsed" : "") });
 
     const header = el("div", { class: "tvwl-header" }, [
@@ -90,16 +155,18 @@
             text: "⤓",
             onClick: () => actions.importFromNative(),
           }),
-          el("button", {
-            class: "tvwl-icon-btn",
-            title: collapsed ? "Expand" : "Collapse",
-            text: collapsed ? "‹" : "›",
-            onClick: () => {
-              const r = document.getElementById(ROOT_ID);
-              r.classList.toggle("tvwl-collapsed");
-              render(ctx, r);
-            },
-          }),
+          embedded
+            ? null
+            : el("button", {
+                class: "tvwl-icon-btn",
+                title: collapsed ? "Expand" : "Collapse",
+                text: collapsed ? "‹" : "›",
+                onClick: () => {
+                  const r = document.getElementById(ROOT_ID);
+                  r.classList.toggle("tvwl-collapsed");
+                  render(ctx, r);
+                },
+              }),
         ]
       ),
     ]);
