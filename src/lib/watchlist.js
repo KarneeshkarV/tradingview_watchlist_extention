@@ -134,6 +134,7 @@
     }
 
     // merge
+    let firstNewId = null;
     for (const incoming of cleanLists) {
       const existing = currentState.lists.find((l) => l.name === incoming.name);
       if (existing) {
@@ -142,9 +143,12 @@
         }
       } else {
         currentState.lists.push(incoming);
+        if (!firstNewId) firstNewId = incoming.id;
       }
     }
-    if (!findList(currentState, currentState.activeId) && currentState.lists[0]) {
+    if (firstNewId) {
+      currentState.activeId = firstNewId;
+    } else if (!findList(currentState, currentState.activeId) && currentState.lists[0]) {
       currentState.activeId = currentState.lists[0].id;
     }
     return currentState;

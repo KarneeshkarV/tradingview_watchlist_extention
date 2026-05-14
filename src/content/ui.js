@@ -4,6 +4,7 @@
   const ROOT_ID = "tvwl-root";
   const HIDDEN_ATTR = "data-tvwl-native-hidden";
   const HOST_MIN_HEIGHT_ATTR = "data-tvwl-host-min-height";
+  const HOST_POSITION_ATTR = "data-tvwl-host-position";
   let nativeObserver = null;
   let themeObserver = null;
   let documentClickHandler = null;
@@ -178,6 +179,11 @@
     if (!host.hasAttribute(HOST_MIN_HEIGHT_ATTR)) {
       host.setAttribute(HOST_MIN_HEIGHT_ATTR, host.style.minHeight || "");
     }
+    if (!host.hasAttribute(HOST_POSITION_ATTR)) {
+      host.setAttribute(HOST_POSITION_ATTR, host.style.position || "");
+    }
+    const computedPosition = getComputedStyle(host).position;
+    if (computedPosition === "static") host.style.position = "relative";
     const height = Math.round(host.getBoundingClientRect().height);
     if (height > 0) {
       const px = Math.max(220, height) + "px";
@@ -192,6 +198,12 @@
       if (previous) node.style.minHeight = previous;
       else node.style.removeProperty("min-height");
       node.removeAttribute(HOST_MIN_HEIGHT_ATTR);
+    });
+    document.querySelectorAll("[" + HOST_POSITION_ATTR + "]").forEach((node) => {
+      const previous = node.getAttribute(HOST_POSITION_ATTR);
+      if (previous) node.style.position = previous;
+      else node.style.removeProperty("position");
+      node.removeAttribute(HOST_POSITION_ATTR);
     });
   }
 
@@ -582,7 +594,7 @@
     const input = el("input", {
       class: "tvwl-add-input",
       type: "text",
-      placeholder: "e.g. NASDAQ:AAPL  or  AAPL",
+      placeholder: "AAPL  ·  paste list: ###NAME,SYM,SYM",
       onKeydown: (e) => {
         if (e.key === "Enter") {
           const v = input.value.trim();

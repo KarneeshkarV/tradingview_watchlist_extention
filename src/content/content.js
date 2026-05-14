@@ -10,6 +10,18 @@
   let state = null;
   let mounted = null;
 
+  // TradingView's native watchlist export uses `###NAME` markers to delimit
+  // section headers within a comma-separated symbol list. We strip those and
+  // any blank tokens so the Add bar accepts pastes like
+  // `###COMMODITY,COMEX:HG1!,MCX:COPPER1!,###CRUDE,NSE:ONGC`.
+  function parseBulkSymbols(raw) {
+    if (typeof raw !== "string") return [];
+    return raw
+      .split(/[,\n\r]+/)
+      .map((s) => s.trim())
+      .filter((s) => s && !s.startsWith("###"));
+  }
+
   function nativeHost() {
     if (state && state.popOut) return null;
     return bridge.findNativeWatchlistHost ? bridge.findNativeWatchlistHost() : null;
@@ -73,6 +85,19 @@
           }
         },
         addSymbol(listId, raw) {
+          const tokens = parseBulkSymbols(raw);
+          if (tokens.length > 1) {
+            const added = model.importSymbols(state, listId, tokens);
+            if (added > 0) {
+              persist();
+              rerender();
+              syncSubscriptions();
+              ui.toast(`Added ${added} symbol${added === 1 ? "" : "s"}`);
+            } else {
+              ui.toast("No new symbols to add");
+            }
+            return;
+          }
           const ok = model.addSymbol(state, listId, raw);
           if (ok) {
             persist();
