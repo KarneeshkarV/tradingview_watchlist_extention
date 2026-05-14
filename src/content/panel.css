@@ -349,6 +349,7 @@
 .tvwl-row:hover .tvwl-row-del { opacity: 1; }
 
 .tvwl-row-avatar {
+  position: relative;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -361,7 +362,29 @@
   letter-spacing: -0.3px;
   flex-shrink: 0;
   user-select: none;
+  overflow: hidden;
 }
+.tvwl-row-avatar-letters {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.tvwl-row-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  background: inherit;
+  z-index: 2;
+}
+.tvwl-row-avatar--has-img { background: transparent !important; }
+.tvwl-row-avatar--has-img .tvwl-row-avatar-letters { display: none; }
 
 .tvwl-row-symbol {
   display: flex;

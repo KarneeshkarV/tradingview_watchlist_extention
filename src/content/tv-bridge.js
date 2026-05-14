@@ -432,6 +432,78 @@
 
   const quoteFeed = makeQuoteFeed();
 
+  // --- Symbol logos -------------------------------------------------------
+  //
+  // TradingView serves logos at https://s3-symbol-logo.tradingview.com/<id>.svg
+  // The <id> comes from the `logoid` field on a symbol info record. We resolve
+  // it via the scanner endpoint, which returns CORS-friendly JSON. Misses are
+  // cached as `null` so we don't refetch on every render.
+
+  const LOGO_IMG_BASE = "https://s3-symbol-logo.tradingview.com/";
+  const LOGO_INFO_URL = "https://scanner.tradingview.com/symbol";
+
+  function makeLogoCache() {
+    // symbol -> string logoid | null (no logo / failed) | undefined (untried)
+    const cache = new Map();
+    const pending = new Map(); // symbol -> Promise<string|null>
+
+    function logoUrlFromId(id) {
+      if (!id || typeof id !== "string") return null;
+      return LOGO_IMG_BASE + encodeURI(id) + ".svg";
+    }
+
+    function getCached(symbol) {
+      if (!symbol) return undefined;
+      return cache.get(symbol);
+    }
+
+    function fetchLogoId(symbol) {
+      if (!symbol || typeof symbol !== "string") return Promise.resolve(null);
+      if (cache.has(symbol)) return Promise.resolve(cache.get(symbol));
+      const existing = pending.get(symbol);
+      if (existing) return existing;
+
+      const url = LOGO_INFO_URL +
+        "?symbol=" + encodeURIComponent(symbol) +
+        "&fields=logoid,base-currency-logoid,currency-logoid";
+      const promise = fetch(url, { credentials: "omit", cache: "force-cache" })
+        .then((r) => (r && r.ok ? r.json() : null))
+        .then((data) => {
+          let id = null;
+          if (data && typeof data === "object") {
+            const fields = ["logoid", "base-currency-logoid", "currency-logoid"];
+            for (const f of fields) {
+              if (typeof data[f] === "string" && data[f].length > 0) {
+                id = data[f];
+                break;
+              }
+            }
+          }
+          cache.set(symbol, id);
+          pending.delete(symbol);
+          return id;
+        })
+        .catch(() => {
+          cache.set(symbol, null);
+          pending.delete(symbol);
+          return null;
+        });
+      pending.set(symbol, promise);
+      return promise;
+    }
+
+    return {
+      getCached,
+      fetchLogoId,
+      logoUrlFromId,
+      logoUrlFor(symbol) {
+        return logoUrlFromId(cache.get(symbol));
+      },
+    };
+  }
+
+  const logoCache = makeLogoCache();
+
   const root = (typeof window !== "undefined" ? window : globalThis);
   root.TVWL = root.TVWL || {};
   root.TVWL.bridge = {
@@ -440,5 +512,6 @@
     currentChartSymbol,
     findNativeWatchlistHost,
     quoteFeed,
+    logoCache,
   };
 })();

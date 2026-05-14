@@ -448,6 +448,45 @@
     return ticker.slice(0, 2).toUpperCase();
   }
 
+  function applySymbolLogo(avatar, lettersEl, sym) {
+    const win = typeof window !== "undefined" ? window : globalThis;
+    const logoCache = win.TVWL && win.TVWL.bridge && win.TVWL.bridge.logoCache;
+    if (!logoCache || !sym) return;
+
+    const cached = logoCache.getCached(sym);
+    if (cached === null) return; // known to have no logo
+    if (typeof cached === "string") {
+      attachLogoImg(avatar, lettersEl, logoCache.logoUrlFromId(cached));
+      return;
+    }
+    logoCache.fetchLogoId(sym).then((id) => {
+      if (!id) return;
+      if (!avatar.isConnected) return; // row replaced by a re-render
+      attachLogoImg(avatar, lettersEl, logoCache.logoUrlFromId(id));
+    });
+  }
+
+  function attachLogoImg(avatar, lettersEl, url) {
+    if (!url) return;
+    // Don't double-mount if a re-render already added one.
+    if (avatar.querySelector(".tvwl-row-avatar-img")) return;
+    const img = el("img", {
+      class: "tvwl-row-avatar-img",
+      src: url,
+      alt: "",
+      loading: "lazy",
+      decoding: "async",
+      referrerpolicy: "no-referrer",
+    });
+    img.addEventListener("load", () => {
+      avatar.classList.add("tvwl-row-avatar--has-img");
+    });
+    img.addEventListener("error", () => {
+      img.remove();
+    });
+    avatar.appendChild(img);
+  }
+
   // Drag-and-drop state — scoped to the current render of a list. The drag
   // image is the row itself; we paint a thin drop indicator above the row
   // currently being targeted.
@@ -603,11 +642,13 @@
     const sym = item.sym;
     const [exch, ticker] = sym.includes(":") ? sym.split(":") : ["", sym];
     const isActive = activeSym && (activeSym === sym || activeSym.split(":").pop() === ticker);
-    const avatar = el("div", {
-      class: "tvwl-row-avatar",
+    const letters = el("span", {
+      class: "tvwl-row-avatar-letters",
       text: avatarLetters(ticker),
     });
+    const avatar = el("div", { class: "tvwl-row-avatar" }, [letters]);
     avatar.style.background = avatarColor(sym);
+    applySymbolLogo(avatar, letters, sym);
 
     const row = el(
       "div",
