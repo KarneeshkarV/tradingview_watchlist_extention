@@ -11,9 +11,10 @@
   }
 
   async function refreshCounts() {
-    const state = (await storage.loadState()) || model.createState();
+    const raw = (await storage.loadState()) || model.createState();
+    const state = model.migrateState(raw);
     const lists = state.lists || [];
-    const symCount = lists.reduce((acc, l) => acc + (l.symbols ? l.symbols.length : 0), 0);
+    const symCount = lists.reduce((acc, l) => acc + model.listSymbols(l).length, 0);
     $("#counts").textContent = `${lists.length} list${lists.length === 1 ? "" : "s"} · ${symCount} symbol${symCount === 1 ? "" : "s"}`;
     const toggle = $("#pop-out-toggle");
     if (toggle) toggle.checked = !!state.popOut;
@@ -32,7 +33,8 @@
   }
 
   async function doExport() {
-    const state = (await storage.loadState()) || model.createState();
+    const raw = (await storage.loadState()) || model.createState();
+    const state = model.migrateState(raw);
     const json = model.serialize(state);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -50,7 +52,7 @@
     if (!file) return;
     const text = await file.text();
     const mode = document.querySelector('input[name="import-mode"]:checked').value;
-    let current = (await storage.loadState()) || model.createState();
+    let current = model.migrateState((await storage.loadState()) || model.createState());
     let next;
     try {
       next = model.deserialize(text, mode, current);

@@ -10,16 +10,14 @@
   let state = null;
   let mounted = null;
 
-  // TradingView's native watchlist export uses `###NAME` markers to delimit
-  // section headers within a comma-separated symbol list. We strip those and
-  // any blank tokens so the Add bar accepts pastes like
-  // `###COMMODITY,COMEX:HG1!,MCX:COPPER1!,###CRUDE,NSE:ONGC`.
+  // Bulk paste: split on commas / newlines, keep `###NAME` tokens so they
+  // become dividers downstream. TradingView's native export uses this format.
   function parseBulkSymbols(raw) {
     if (typeof raw !== "string") return [];
     return raw
       .split(/[,\n\r]+/)
       .map((s) => s.trim())
-      .filter((s) => s && !s.startsWith("###"));
+      .filter(Boolean);
   }
 
   function nativeHost() {
@@ -51,7 +49,7 @@
   function syncSubscriptions() {
     if (!bridge.quoteFeed) return;
     const list = state && state.lists.find((l) => l.id === state.activeId);
-    bridge.quoteFeed.setSymbols(list ? list.symbols : []);
+    bridge.quoteFeed.setSymbols(list ? model.listSymbols(list) : []);
   }
 
   function ctx() {
@@ -86,15 +84,15 @@
         },
         addSymbol(listId, raw) {
           const tokens = parseBulkSymbols(raw);
-          if (tokens.length > 1) {
+          if (tokens.length > 1 || (tokens[0] && tokens[0].startsWith("###"))) {
             const added = model.importSymbols(state, listId, tokens);
             if (added > 0) {
               persist();
               rerender();
               syncSubscriptions();
-              ui.toast(`Added ${added} symbol${added === 1 ? "" : "s"}`);
+              ui.toast(`Added ${added} item${added === 1 ? "" : "s"}`);
             } else {
-              ui.toast("No new symbols to add");
+              ui.toast("Nothing new to add");
             }
             return;
           }
@@ -105,6 +103,38 @@
             syncSubscriptions();
           } else {
             ui.toast("Symbol already in list or invalid");
+          }
+        },
+        addDivider(listId, label) {
+          const item = model.addDivider(state, listId, label);
+          if (item) {
+            persist();
+            rerender();
+          }
+        },
+        renameDivider(listId, itemId, label) {
+          if (model.renameDivider(state, listId, itemId, label)) {
+            persist();
+            rerender();
+          }
+        },
+        toggleDividerCollapsed(listId, itemId) {
+          if (model.toggleDividerCollapsed(state, listId, itemId)) {
+            persist();
+            rerender();
+          }
+        },
+        removeItem(listId, itemId) {
+          if (model.removeItem(state, listId, itemId)) {
+            persist();
+            rerender();
+            syncSubscriptions();
+          }
+        },
+        moveItem(listId, itemId, toIndex) {
+          if (model.moveItem(state, listId, itemId, toIndex)) {
+            persist();
+            rerender();
           }
         },
         removeSymbol(listId, sym) {
@@ -155,7 +185,7 @@
           persist();
           rerender();
           syncSubscriptions();
-          ui.toast(added ? `Imported ${added} symbol${added === 1 ? "" : "s"}` : "No new symbols");
+          ui.toast(added ? `Imported ${added} item${added === 1 ? "" : "s"}` : "Nothing new");
         },
       },
     };
@@ -231,7 +261,7 @@
   async function init() {
     try {
       const loaded = await storage.loadState();
-      state = loaded && loaded.lists ? loaded : model.createState();
+      state = loaded && loaded.lists ? model.migrateState(loaded) : model.createState();
     } catch (e) {
       console.warn(LOG, "load failed; using fresh state", e);
       state = model.createState();
@@ -255,7 +285,7 @@
     storage.onStorageChanged((newValue) => {
       if (newValue) {
         const wasPopOut = !!(state && state.popOut);
-        state = newValue;
+        state = model.migrateState(newValue);
         if (typeof state.popOut !== "boolean") state.popOut = false;
         if (state.popOut !== wasPopOut) {
           mounted = mountPanel();

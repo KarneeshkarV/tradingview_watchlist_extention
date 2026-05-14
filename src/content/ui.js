@@ -56,24 +56,16 @@
   }
 
   // ── Theme detection ─────────────────────────────────────────────────────
-  //
-  // TradingView toggles `theme-dark` / `theme-light` on the html element and
-  // also exposes `data-theme` on body. We mirror that so the panel stays in
-  // sync; if neither is set, we fall back to the system `prefers-color-scheme`
-  // via CSS (no JS needed).
 
   function detectTVTheme() {
     const html = document.documentElement;
     const body = document.body;
-    // 1) Class-based: TradingView uses `theme-dark` / `theme-light` somewhere.
     const themed = document.querySelector(".theme-dark, .theme-light");
     if (themed) return themed.classList.contains("theme-dark") ? "dark" : "light";
     if (html?.classList.contains("theme-dark") || body?.classList.contains("theme-dark")) return "dark";
     if (html?.classList.contains("theme-light") || body?.classList.contains("theme-light")) return "light";
-    // 2) `data-theme` attribute on html/body.
     const dt = html?.getAttribute("data-theme") || body?.getAttribute("data-theme");
     if (dt === "dark" || dt === "light") return dt;
-    // 3) Fall back to luminance of the body / html background.
     return luminanceTheme();
   }
 
@@ -81,7 +73,6 @@
     try {
       const root = document.getElementById(ROOT_ID);
       const probe = root?.parentElement || document.body || document.documentElement;
-      // Walk up looking for a non-transparent background.
       let node = probe;
       while (node && node !== document.documentElement) {
         const bg = getComputedStyle(node).backgroundColor;
@@ -233,6 +224,11 @@
     root.appendChild(buildPanel(ctx, collapsed, root));
   }
 
+  function hasAnySymbol(list) {
+    if (!list || !Array.isArray(list.items)) return false;
+    return list.items.some((it) => it.kind === "symbol");
+  }
+
   function buildPanel(ctx, collapsed, root) {
     const { state, actions } = ctx;
     const embedded = root.classList.contains("tvwl-root--embedded");
@@ -243,12 +239,12 @@
 
     if (collapsed) return panel;
 
-    if (activeList && activeList.symbols.length > 0) {
+    if (activeList && hasAnySymbol(activeList)) {
       panel.appendChild(buildColumnHeader());
     }
 
     if (activeList) {
-      panel.appendChild(buildSymbolList(activeList, ctx, root));
+      panel.appendChild(buildItemList(activeList, ctx, root));
       panel.appendChild(buildAddBar(activeList, actions));
     } else {
       panel.appendChild(el("div", { class: "tvwl-empty", text: "No list selected." }));
@@ -290,6 +286,19 @@
         },
       })
     );
+    if (activeList) {
+      actionsWrap.appendChild(
+        el("button", {
+          class: "tvwl-icon-btn",
+          title: "Add divider/section to this list",
+          html: '<span class="tvwl-icon-divider"></span>',
+          onClick: () => {
+            const label = promptText("Section name", "Section");
+            if (label) actions.addDivider(activeList.id, label);
+          },
+        })
+      );
+    }
     actionsWrap.appendChild(
       el("button", {
         class: "tvwl-icon-btn tvwl-icon-btn--accent",
@@ -436,24 +445,32 @@
 
   function avatarLetters(ticker) {
     if (!ticker) return "?";
-    // First two letters of the ticker, like TradingView's badge style.
     return ticker.slice(0, 2).toUpperCase();
   }
 
-  function buildSymbolList(list, ctx, root) {
+  // Drag-and-drop state — scoped to the current render of a list. The drag
+  // image is the row itself; we paint a thin drop indicator above the row
+  // currently being targeted.
+  function clearDropIndicator(wrap) {
+    wrap.querySelectorAll(".tvwl-row--drop-before, .tvwl-row--drop-after").forEach((n) => {
+      n.classList.remove("tvwl-row--drop-before", "tvwl-row--drop-after");
+    });
+  }
+
+  function buildItemList(list, ctx, root) {
     const { actions } = ctx;
     const wrap = el("div", { class: "tvwl-list" });
-    if (list.symbols.length === 0) {
+
+    if (list.items.length === 0) {
       wrap.appendChild(
         el("div", {
           class: "tvwl-empty",
-          text: "No symbols yet. Add one below, or import from TradingView's native watchlist.",
+          text: "Empty list. Add a symbol below, paste a bulk list, or add a section divider.",
         })
       );
       return wrap;
     }
 
-    // Highlight the row matching the current chart symbol.
     let activeSym = null;
     try {
       const bridge = (typeof window !== "undefined" ? window : globalThis).TVWL?.bridge;
@@ -462,50 +479,170 @@
       activeSym = null;
     }
 
-    list.symbols.forEach((sym) => {
-      const [exch, ticker] = sym.includes(":") ? sym.split(":") : ["", sym];
-      const isActive = activeSym && (activeSym === sym || activeSym.split(":").pop() === ticker);
-      const avatar = el("div", {
-        class: "tvwl-row-avatar",
-        text: avatarLetters(ticker),
-      });
-      avatar.style.background = avatarColor(sym);
+    // Track collapsed sections so we skip child rows.
+    let hidden = false;
 
-      const row = el(
-        "div",
-        {
-          class: "tvwl-row" + (isActive ? " tvwl-row--active" : ""),
-          title: sym,
-          "data-symbol": sym,
-          onClick: () => actions.loadSymbol(sym),
-        },
-        [
-          avatar,
-          el(
-            "div",
-            { class: "tvwl-row-symbol" },
-            [
-              el("span", { class: "tvwl-row-ticker", text: ticker }),
-              el("span", { class: "tvwl-row-dot" }),
-            ]
-          ),
-          el("div", { class: "tvwl-row-last", text: "—" }),
-          el("div", { class: "tvwl-row-chg", text: "" }),
-          el("div", { class: "tvwl-row-chgp", text: "" }),
-          el("button", {
-            class: "tvwl-row-del",
-            title: "Remove",
-            text: "×",
-            onClick: (e) => {
-              e.stopPropagation();
-              actions.removeSymbol(list.id, sym);
-            },
-          }),
-        ]
-      );
-      wrap.appendChild(row);
+    list.items.forEach((item, idx) => {
+      if (item.kind === "divider") {
+        hidden = !!item.collapsed;
+        wrap.appendChild(buildDividerRow(list, item, idx, actions, wrap));
+        return;
+      }
+      if (hidden) return; // symbol inside a collapsed section
+      wrap.appendChild(buildSymbolRow(list, item, idx, activeSym, actions, wrap));
     });
+
     return wrap;
+  }
+
+  function attachDragHandlers(row, list, item, idx, actions, wrap) {
+    row.setAttribute("draggable", "true");
+    row.setAttribute("data-item-id", item.id);
+    row.setAttribute("data-item-idx", String(idx));
+
+    row.addEventListener("dragstart", (e) => {
+      row.classList.add("tvwl-row--dragging");
+      try {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", item.id);
+      } catch (err) {
+        /* Firefox sometimes throws */
+      }
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("tvwl-row--dragging");
+      clearDropIndicator(wrap);
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = row.getBoundingClientRect();
+      const before = e.clientY - rect.top < rect.height / 2;
+      clearDropIndicator(wrap);
+      row.classList.add(before ? "tvwl-row--drop-before" : "tvwl-row--drop-after");
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("tvwl-row--drop-before", "tvwl-row--drop-after");
+    });
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const draggedId = e.dataTransfer.getData("text/plain");
+      clearDropIndicator(wrap);
+      if (!draggedId || draggedId === item.id) return;
+      const rect = row.getBoundingClientRect();
+      const before = e.clientY - rect.top < rect.height / 2;
+      // Compute destination index in the post-removal array.
+      const fromIdx = list.items.findIndex((it) => it.id === draggedId);
+      const targetIdx = idx;
+      let dest = before ? targetIdx : targetIdx + 1;
+      if (fromIdx !== -1 && fromIdx < dest) dest -= 1; // adjust since removal shifts
+      actions.moveItem(list.id, draggedId, dest);
+    });
+  }
+
+  function buildDividerRow(list, item, idx, actions, wrap) {
+    const row = el(
+      "div",
+      {
+        class:
+          "tvwl-divider" +
+          (item.collapsed ? " tvwl-divider--collapsed" : "") +
+          " tvwl-itemrow",
+        title: "Click to " + (item.collapsed ? "expand" : "collapse") + " section",
+        onClick: (e) => {
+          // Ignore clicks that originated on the action buttons.
+          if (e.target.closest(".tvwl-divider-actions")) return;
+          actions.toggleDividerCollapsed(list.id, item.id);
+        },
+        onDblclick: (e) => {
+          if (e.target.closest(".tvwl-divider-actions")) return;
+          const n = promptText("Section name", item.label);
+          if (n) actions.renameDivider(list.id, item.id, n);
+        },
+      },
+      [
+        el("span", {
+          class: "tvwl-divider-chev",
+          text: item.collapsed ? "▸" : "▾",
+        }),
+        el("span", { class: "tvwl-divider-label", text: item.label || "Section" }),
+        el("span", { class: "tvwl-divider-rule" }),
+        el(
+          "span",
+          { class: "tvwl-divider-actions" },
+          [
+            el("button", {
+              class: "tvwl-divider-btn",
+              title: "Rename section",
+              text: "✎",
+              onClick: (e) => {
+                e.stopPropagation();
+                const n = promptText("Section name", item.label);
+                if (n) actions.renameDivider(list.id, item.id, n);
+              },
+            }),
+            el("button", {
+              class: "tvwl-divider-btn tvwl-divider-btn--del",
+              title: "Remove section divider",
+              text: "×",
+              onClick: (e) => {
+                e.stopPropagation();
+                actions.removeItem(list.id, item.id);
+              },
+            }),
+          ]
+        ),
+      ]
+    );
+    attachDragHandlers(row, list, item, idx, actions, wrap);
+    return row;
+  }
+
+  function buildSymbolRow(list, item, idx, activeSym, actions, wrap) {
+    const sym = item.sym;
+    const [exch, ticker] = sym.includes(":") ? sym.split(":") : ["", sym];
+    const isActive = activeSym && (activeSym === sym || activeSym.split(":").pop() === ticker);
+    const avatar = el("div", {
+      class: "tvwl-row-avatar",
+      text: avatarLetters(ticker),
+    });
+    avatar.style.background = avatarColor(sym);
+
+    const row = el(
+      "div",
+      {
+        class: "tvwl-row tvwl-itemrow" + (isActive ? " tvwl-row--active" : ""),
+        title: sym,
+        "data-symbol": sym,
+        onClick: () => actions.loadSymbol(sym),
+      },
+      [
+        avatar,
+        el(
+          "div",
+          { class: "tvwl-row-symbol" },
+          [
+            el("span", { class: "tvwl-row-ticker", text: ticker }),
+            el("span", { class: "tvwl-row-dot" }),
+          ]
+        ),
+        el("div", { class: "tvwl-row-last", text: "—" }),
+        el("div", { class: "tvwl-row-chg", text: "" }),
+        el("div", { class: "tvwl-row-chgp", text: "" }),
+        el("button", {
+          class: "tvwl-row-del",
+          title: "Remove",
+          text: "×",
+          onClick: (e) => {
+            e.stopPropagation();
+            actions.removeItem(list.id, item.id);
+          },
+        }),
+      ]
+    );
+    attachDragHandlers(row, list, item, idx, actions, wrap);
+    return row;
   }
 
   function formatPrice(lp) {
@@ -594,7 +731,7 @@
     const input = el("input", {
       class: "tvwl-add-input",
       type: "text",
-      placeholder: "AAPL  ·  paste list: ###NAME,SYM,SYM",
+      placeholder: "AAPL · ###Section · paste: ###Tech,AAPL,MSFT",
       onKeydown: (e) => {
         if (e.key === "Enter") {
           const v = input.value.trim();
